@@ -2942,7 +2942,30 @@ BOOST_AUTO_TEST_CASE(testTaiwanCalendar) {
     BOOST_CHECK(calendar.isHoliday(Date(10, October, 2024)));
     BOOST_CHECK(calendar.isHoliday(Date(9, February, 2024))); // Lunar New Year
     BOOST_CHECK(calendar.isHoliday(Date(9, February, 2002)));
+    BOOST_CHECK(calendar.isHoliday(Date(29, September, 2025))); // Teachers' Day (adjusted)
+    BOOST_CHECK(calendar.isHoliday(Date(24, October, 2025))); // Retrocession Day (adjusted)
+    BOOST_CHECK(calendar.isHoliday(Date(25, December, 2025))); // Constitution Day
+    BOOST_CHECK(calendar.isHoliday(Date(28, September, 2026)));
+    BOOST_CHECK(calendar.isHoliday(Date(26, October, 2026)));
+    BOOST_CHECK(calendar.isHoliday(Date(25, December, 2026)));
+    BOOST_CHECK(calendar.isHoliday(Date(24, December, 2027))); // Constitution Day (adjusted)
+    BOOST_CHECK(calendar.isHoliday(Date(1, March, 2027))); // Peace Memorial Day (adjusted)
+    BOOST_CHECK(calendar.isHoliday(Date(30, April, 2027))); // Labor Day (adjusted)
+    BOOST_CHECK(calendar.isHoliday(Date(11, October, 2027))); // Double Tenth (adjusted)
+    BOOST_CHECK(calendar.isHoliday(Date(31, December, 2027))); // New Year's Day (adjusted)
     BOOST_CHECK(calendar.isBusinessDay(Date(2, January, 2024)));
+    BOOST_CHECK(calendar.isBusinessDay(Date(25, December, 2024)));
+    BOOST_CHECK(calendar.isBusinessDay(Date(24, December, 2021)));
+    BOOST_CHECK(calendar.isBusinessDay(Date(27, February, 2009))); // no adjustment before 2015
+    BOOST_CHECK(calendar.isBusinessDay(Date(1, March, 2032))); // February 28th is a Saturday
+    const Date adjusted[] = {
+        {27, February, 2015}, {9, October, 2015}, {29, February, 2016}, {2, May, 2016},
+        {2, January, 2017}, {9, October, 2020}, {1, March, 2021}, {30, April, 2021},
+        {11, October, 2021}, {31, December, 2021}, {2, May, 2022}, {2, January, 2023},
+        {27, February, 2026}, {9, October, 2026}
+    };
+    for (const Date& date : adjusted)
+        BOOST_CHECK_MESSAGE(calendar.isHoliday(date), date);
     const Date historical[] = {
         {4, June, 2003}, {21, January, 2004},
         {9, February, 2005}, {5, April, 2006}, {19, February, 2007},
@@ -3020,6 +3043,19 @@ BOOST_AUTO_TEST_CASE(testBotswanaCalendar) {
     Calendar calendar = Botswana();
     BOOST_CHECK(calendar.isHoliday(Date(1, May, 2024)));
     BOOST_CHECK(calendar.isBusinessDay(Date(2, May, 2024)));
+    BOOST_CHECK(calendar.isHoliday(Date(2, January, 2025)));
+    BOOST_CHECK(calendar.isBusinessDay(Date(3, January, 2025)));
+    BOOST_CHECK(calendar.isHoliday(Date(3, January, 2022))); // January 2nd on Sunday
+    BOOST_CHECK(calendar.isHoliday(Date(3, January, 2023))); // January 2nd on Monday
+    BOOST_CHECK(calendar.isHoliday(Date(22, July, 2025))); // Tuesday after Presidents' Day
+    BOOST_CHECK(calendar.isBusinessDay(Date(23, July, 2025)));
+    BOOST_CHECK(calendar.isHoliday(Date(2, October, 2018))); // October 1st on Monday
+    BOOST_CHECK(calendar.isHoliday(Date(2, October, 2023))); // October 1st on Sunday
+    BOOST_CHECK(calendar.isBusinessDay(Date(3, October, 2023)));
+    BOOST_CHECK(calendar.isHoliday(Date(27, December, 2021))); // Boxing Day on Sunday
+    BOOST_CHECK(calendar.isHoliday(Date(27, December, 2022))); // Boxing Day on Monday
+    BOOST_CHECK(calendar.isHoliday(Date(15, May, 2026))); // in honour of former President Mogae
+    BOOST_CHECK(calendar.isBusinessDay(Date(15, May, 2025)));
 }
 
 BOOST_AUTO_TEST_CASE(testCzechRepublicCalendar) {
@@ -4815,13 +4851,40 @@ BOOST_AUTO_TEST_CASE(testIndia) {
     Calendar c = India();
     checkHolidays(c.holidayList(Date(1, January, 2026), Date(31, December, 2026)), expectedHol);
 
+    // 2025, from NSE Clearing circular NCL/CMPT/65916 and the later
+    // addition of September 8th (NCL/CMPT/70039)
+    std::vector<Date> expectedHol2025 = {
+        Date(19, February, 2025),  // Chhatrapati Shivaji Maharaj Jayanti
+        Date(26, February, 2025),  // Mahashivratri
+        Date(14, March, 2025),     // Holi
+        Date(31, March, 2025),     // Ramzan Id
+        Date(1, April, 2025),      // Annual Bank Closing
+        Date(10, April, 2025),     // Mahavir Jayanti
+        Date(14, April, 2025),     // Ambedkar Jayanti
+        Date(18, April, 2025),     // Good Friday
+        Date(1, May, 2025),        // Maharashtra Day
+        Date(12, May, 2025),       // Buddha Pournima
+        Date(15, August, 2025),    // Independence Day
+        Date(27, August, 2025),    // Ganesh Chaturthi
+        Date(5, September, 2025),  // Id-E-Milad
+        Date(8, September, 2025),  // Id-E-Milad (moved)
+        Date(2, October, 2025),    // Gandhi Jayanti
+        Date(21, October, 2025),   // Diwali - Laxmi Pujan
+        Date(22, October, 2025),   // Diwali - Balipratipada
+        Date(5, November, 2025),   // Gurunank Jayanti
+        Date(25, December, 2025),  // Christmas
+    };
+    checkHolidays(c.holidayList(Date(1, January, 2025), Date(31, December, 2025)),
+                  expectedHol2025);
+
     const Date historical[] = {
         {21, January, 2005}, {11, January, 2006}, {1, January, 2007},
         {6, March, 2008}, {8, January, 2009}, {1, January, 2010},
         {2, March, 2011}, {20, February, 2012}, {27, March, 2013},
         {27, February, 2014}, {19, February, 2019}, {19, February, 2020},
         {19, February, 2021}, {1, March, 2022}, {7, March, 2023},
-        {22, January, 2024}, {19, February, 2025}
+        {22, January, 2024}, {18, September, 2024}, {20, November, 2024},
+        {19, February, 2025}
     };
     for (const Date& date : historical)
         BOOST_CHECK_MESSAGE(c.isHoliday(date), date);
