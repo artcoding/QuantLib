@@ -20,6 +20,9 @@ from pricing import (
     parse_soft_calls,
     spot_grid,
 )
+from tf_cn import greeks_cn, spot_frame
+
+SCHEMES = ("Binomial TF", "Crank-Nicolson TF")
 
 
 def _params_to_tuple(params: ConvertibleParams) -> tuple:
@@ -110,21 +113,27 @@ def _params_from_tuple(key: tuple) -> ConvertibleParams:
     )
 
 
-@st.cache_data(show_spinner=False)
-def _cached_greeks(key: tuple):
-    g = compute_greeks(_params_from_tuple(key))
+def _greeks_dict(greeks) -> dict:
     return {
-        "npv": g.npv,
-        "delta": g.delta,
-        "gamma": g.gamma,
-        "vega": g.vega,
-        "credit_spread_01": g.credit_spread_01,
+        "npv": greeks.npv,
+        "delta": greeks.delta,
+        "gamma": greeks.gamma,
+        "vega": greeks.vega,
+        "credit_spread_01": greeks.credit_spread_01,
     }
 
 
 @st.cache_data(show_spinner=False)
-def _cached_grid(key: tuple, spot_min: float, spot_max: float, n_points: int):
-    return spot_grid(_params_from_tuple(key), spot_min, spot_max, n_points)
+def _cached_binomial(key: tuple, spot_min: float, spot_max: float, n_points: int):
+    params = _params_from_tuple(key)
+    return _greeks_dict(compute_greeks(params)), spot_grid(params, spot_min, spot_max, n_points)
+
+
+@st.cache_data(show_spinner=False)
+def _cached_crank_nicolson(key: tuple, spot_min: float, spot_max: float, n_points: int):
+    params = _params_from_tuple(key)
+    greeks, grid = greeks_cn(params, spot_min=spot_min, spot_max=spot_max)
+    return _greeks_dict(greeks), spot_frame(grid, spot_min, spot_max, n_points)
 
 
 st.set_page_config(
@@ -196,11 +205,20 @@ def _build_params_from_sidebar() -> ConvertibleParams:
     )
 
     st.sidebar.header("Engine")
+    scheme = st.sidebar.selectbox("Scheme", list(SCHEMES))
     american = st.sidebar.selectbox("Exercise", ["American", "European"]) == "American"
-    tree_type = st.sidebar.selectbox("Tree type", list(TREE_TYPES.keys()))
+    if scheme == "Binomial TF":
+        tree_type = st.sidebar.selectbox("Tree type", list(TREE_TYPES.keys()))
+    else:
+        tree_type = "Cox-Ross-Rubinstein"
     time_steps = st.sidebar.slider("Time steps", min_value=51, max_value=801, value=201, step=50)
     bump_rel = st.sidebar.number_input(
-        "Spot bump (relative)", min_value=0.0001, value=0.01, step=0.001, format="%.4f"
+        "Spot bump (relative)",
+        min_value=0.0001,
+        value=0.01,
+        step=0.001,
+        format="%.4f",
+        help="Binomial delta and gamma use this bump. Crank–Nicolson delta and gamma are derivatives of the finite-difference grid.",
     )
 
     st.sidebar.header("Chart")
@@ -249,7 +267,7 @@ def _build_params_from_sidebar() -> ConvertibleParams:
         "spot_max": float(spot) * float(spot_pct_max) / 100.0,
         "n_points": int(n_points),
     }
-    return params, chart_cfg
+    return params, chart_cfg, scheme
 
 
 def _line_chart(x, y, title: str, spot: float, y_title: str) -> go.Figure:
@@ -269,22 +287,30 @@ def _line_chart(x, y, title: str, spot: float, y_title: str) -> go.Figure:
 def main() -> None:
     st.title("Convertible Bond Pricer")
     st.caption(
-        "Fixed-coupon convertible with soft call / put — QuantLib Tsiveriotis–Fernandes "
-        "binomial engine. Greeks are bump-and-reprice (not engine-native)."
+        "Fixed-coupon convertible with soft call / put. Binomial TF is QuantLib's tree. "
+        "Crank–Nicolson TF is the Ayache–Forsyth–Vetzal theta scheme on the same split. "
+        "Binomial Greeks are bump-and-reprice; Crank–Nicolson delta and gamma are grid derivatives."
     )
 
-    params, chart_cfg = _build_params_from_sidebar()
+    params, chart_cfg, scheme = _build_params_from_sidebar()
 
     try:
         with st.spinner("Pricing…"):
             key = _params_to_tuple(params)
-            greeks = _cached_greeks(key)
-            grid = _cached_grid(
-                key,
-                chart_cfg["spot_min"],
-                chart_cfg["spot_max"],
-                chart_cfg["n_points"],
-            )
+            if scheme == "Crank-Nicolson TF":
+                greeks, grid = _cached_crank_nicolson(
+                    key,
+                    chart_cfg["spot_min"],
+                    chart_cfg["spot_max"],
+                    chart_cfg["n_points"],
+                )
+            else:
+                greeks, grid = _cached_binomial(
+                    key,
+                    chart_cfg["spot_min"],
+                    chart_cfg["spot_max"],
+                    chart_cfg["n_points"],
+                )
     except Exception as exc:  # noqa: BLE001 — surface QuantLib / input errors in UI
         st.error(str(exc))
         return
@@ -301,9 +327,15 @@ def main() -> None:
         if params.conversion_ratio is None
         else params.conversion_ratio
     )
+    engine_label = (
+        f"Tree **{params.tree_type}**"
+        if scheme == "Binomial TF"
+        else "Crank–Nicolson"
+    )
     st.write(
+        f"Scheme **{scheme}** · "
         f"Conversion ratio **{ratio:.6f}** · "
-        f"Tree **{params.tree_type}** · "
+        f"{engine_label} · "
         f"Steps **{params.time_steps}** · "
         f"{'American' if params.american else 'European'} conversion"
     )
