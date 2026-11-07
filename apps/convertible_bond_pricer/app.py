@@ -21,8 +21,9 @@ from pricing import (
     spot_grid,
 )
 from tf_cn import greeks_cn, spot_frame
+from total_default import TABLE_SPOT, sample_frame, solve_total_default, value_at
 
-SCHEMES = ("Binomial TF", "Crank-Nicolson TF")
+SCHEMES = ("Binomial TF", "Crank-Nicolson TF", "Ayache total default")
 
 
 def _params_to_tuple(params: ConvertibleParams) -> tuple:
@@ -130,6 +131,14 @@ def _cached_binomial(key: tuple, spot_min: float, spot_max: float, n_points: int
 
 
 @st.cache_data(show_spinner=False)
+def _cached_total_default(n: int, spot_min: float, spot_max: float, n_points: int):
+    grid = solve_total_default(n)
+    npv, delta, gamma = value_at(grid, TABLE_SPOT)
+    frame = sample_frame(grid, spot_min, spot_max, n_points)
+    return {"npv": npv, "delta": delta, "gamma": gamma}, frame
+
+
+@st.cache_data(show_spinner=False)
 def _cached_crank_nicolson(key: tuple, spot_min: float, spot_max: float, n_points: int):
     params = _params_from_tuple(key)
     greeks, grid = greeks_cn(params, spot_min=spot_min, spot_max=spot_max)
@@ -206,6 +215,12 @@ def _build_params_from_sidebar() -> ConvertibleParams:
 
     st.sidebar.header("Engine")
     scheme = st.sidebar.selectbox("Scheme", list(SCHEMES))
+    if scheme == "Ayache total default":
+        ayache_nodes = st.sidebar.select_slider(
+            "Spot nodes", options=[200, 400, 800], value=200
+        )
+    else:
+        ayache_nodes = 200
     american = st.sidebar.selectbox("Exercise", ["American", "European"]) == "American"
     if scheme == "Binomial TF":
         tree_type = st.sidebar.selectbox("Tree type", list(TREE_TYPES.keys()))
@@ -267,7 +282,7 @@ def _build_params_from_sidebar() -> ConvertibleParams:
         "spot_max": float(spot) * float(spot_pct_max) / 100.0,
         "n_points": int(n_points),
     }
-    return params, chart_cfg, scheme
+    return params, chart_cfg, scheme, int(ayache_nodes)
 
 
 def _line_chart(x, y, title: str, spot: float, y_title: str) -> go.Figure:
@@ -284,15 +299,61 @@ def _line_chart(x, y, title: str, spot: float, y_title: str) -> go.Figure:
     return fig
 
 
+def _render_total_default(nodes: int) -> None:
+    """Table 1 total-default contract. The dashed line is the table spot S = 100."""
+    spot_min, spot_max, n_points = 20.0, 200.0, 91
+    try:
+        with st.spinner("Pricing the Ayache total-default contract…"):
+            greeks, grid = _cached_total_default(nodes, spot_min, spot_max, n_points)
+    except Exception as exc:  # noqa: BLE001 — surface solver errors in the UI
+        st.error(str(exc))
+        return
+
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Price at 100", f"{greeks['npv']:,.4f}")
+    c2.metric("Delta", f"{greeks['delta']:,.4f}")
+    c3.metric("Gamma", f"{greeks['gamma']:,.6f}")
+    st.write(
+        "Scheme **Ayache total default** · face 100 · conversion ratio 1 · "
+        f"coupon 4 semiannual · r = 0.05 · hazard 0.02 · vol 20% · "
+        f"**{nodes}** nodes · call 110 after year 2 · put 105 at year 3"
+    )
+    st.caption("Sidebar market and bond inputs are not used for this preset.")
+
+    tab_price, tab_delta, tab_gamma = st.tabs(["Price", "Delta", "Gamma"])
+    with tab_price:
+        st.plotly_chart(
+            _line_chart(grid["spot"], grid["npv"], "Total-default price vs spot", TABLE_SPOT, "Price"),
+            use_container_width=True,
+        )
+    with tab_delta:
+        st.plotly_chart(
+            _line_chart(grid["spot"], grid["delta"], "Delta vs spot", TABLE_SPOT, "Delta"),
+            use_container_width=True,
+        )
+    with tab_gamma:
+        st.plotly_chart(
+            _line_chart(grid["spot"], grid["gamma"], "Gamma vs spot", TABLE_SPOT, "Gamma"),
+            use_container_width=True,
+        )
+    with st.expander("Grid data"):
+        st.dataframe(grid, use_container_width=True)
+
+
 def main() -> None:
     st.title("Convertible Bond Pricer")
     st.caption(
         "Fixed-coupon convertible with soft call / put. Binomial TF is QuantLib's tree. "
         "Crank–Nicolson TF is the Ayache–Forsyth–Vetzal theta scheme on the same split. "
-        "Binomial Greeks are bump-and-reprice; Crank–Nicolson delta and gamma are grid derivatives."
+        "Ayache total default is the Table 1 hedge model with the short rate replaced by r + p. "
+        "Binomial Greeks are bump-and-reprice; the finite-difference delta and gamma are grid derivatives."
     )
 
-    params, chart_cfg, scheme = _build_params_from_sidebar()
+    params, chart_cfg, scheme, ayache_nodes = _build_params_from_sidebar()
+
+    if scheme == "Ayache total default":
+        _render_total_default(ayache_nodes)
+        return
 
     try:
         with st.spinner("Pricing…"):
